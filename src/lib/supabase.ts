@@ -2,8 +2,15 @@ import { createBrowserClient } from '@supabase/ssr'
 
 export function createClient() {
   return createBrowserClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+    'https://ukqyrudisnvstdlzsqsq.supabase.co',
+    'sb_publishable_jw-BS8GquyOL2jIG_kvtYQ_G9kYqMng',
+    {
+      auth: {
+        flowType: 'implicit',
+        detectSessionInUrl: true,
+        persistSession: true,
+      }
+    }
   )
 }
 
