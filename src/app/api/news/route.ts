@@ -69,9 +69,11 @@ export async function GET() {
         const nextWeek = await calNext.json()
         calendarEvents = [...thisWeek, ...nextWeek]
           .filter((e: any) => e.impact === 'High')
-          .sort((a: any, b: any) =>
-            new Date(a.date).getTime() - new Date(b.date).getTime()
-          )
+         .sort((a: any, b: any) => {
+  const dateA = new Date(a.date).getTime()
+  const dateB = new Date(b.date).getTime()
+  return dateA - dateB
+})
       }
     } catch (e) {
       console.error('Calendar error:', e)
