@@ -3,11 +3,20 @@ import { createServerClient } from '@supabase/ssr'
 import { cookies } from 'next/headers'
 
 export async function GET(request: Request) {
-  const { searchParams, origin } = new URL(request.url)
-  const code = searchParams.get('code')
+  const requestUrl = new URL(request.url)
+  const code = requestUrl.searchParams.get('code')
+  const error = requestUrl.searchParams.get('error')
+
+  if (error) {
+    return NextResponse.redirect(
+      `https://tradingjournal-dzr5.vercel.app/auth/error`
+    )
+  }
 
   if (!code) {
-    return NextResponse.redirect(`${origin}/auth/error`)
+    return NextResponse.redirect(
+      `https://tradingjournal-dzr5.vercel.app/auth/error`
+    )
   }
 
   const cookieStore = await cookies()
@@ -16,6 +25,13 @@ export async function GET(request: Request) {
     'https://ukqyrudisnvstdlzsqsq.supabase.co',
     'sb_publishable_jw-BS8GquyOL2jIG_kvtYQ_G9kYqMng',
     {
+      cookieOptions: {
+        domain: 'tradingjournal-dzr5.vercel.app',
+        path: '/',
+        sameSite: 'lax',
+        secure: true,
+        maxAge: 60 * 60 * 24 * 365,
+      },
       cookies: {
         getAll() {
           return cookieStore.getAll()
@@ -25,20 +41,29 @@ export async function GET(request: Request) {
             cookiesToSet.forEach(({ name, value, options }) =>
               cookieStore.set(name, value, options)
             )
-          } catch {
-            // ignore
+          } catch (e) {
+            console.error('Cookie error:', e)
           }
         },
       },
     }
   )
 
-  const { error } = await supabase.auth.exchangeCodeForSession(code)
+  const { data, error: exchangeError } = await supabase.auth.exchangeCodeForSession(code)
+  
+  console.log('Exchange result:', JSON.stringify({ 
+    user: data?.user?.email, 
+    error: exchangeError?.message 
+  }))
 
-  if (error) {
-    console.error('Exchange error:', error.message)
-    return NextResponse.redirect(`${origin}/auth/error`)
+  if (exchangeError) {
+    console.error('Exchange error:', exchangeError)
+    return NextResponse.redirect(
+      `https://tradingjournal-dzr5.vercel.app/auth/error`
+    )
   }
 
-  return NextResponse.redirect(`${origin}/dashboard`)
+  return NextResponse.redirect(
+    `https://tradingjournal-dzr5.vercel.app/dashboard`
+  )
 }
