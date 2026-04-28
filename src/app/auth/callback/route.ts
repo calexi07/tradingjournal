@@ -11,31 +11,28 @@ export async function GET(request: Request) {
   const supabaseUrl = 'https://ukqyrudisnvstdlzsqsq.supabase.co'
   const supabaseKey = 'sb_publishable_jw-BS8GquyOL2jIG_kvtYQ_G9kYqMng'
 
-  // PKCE exchange
-  const response = await fetch(`${supabaseUrl}/auth/v1/token?grant_type=pkce`, {
+  const response = await fetch(`${supabaseUrl}/auth/v1/token`, {
     method: 'POST',
     headers: {
-      'Content-Type': 'application/json',
+      'Content-Type': 'application/x-www-form-urlencoded',
       'apikey': supabaseKey,
-      'Authorization': `Bearer ${supabaseKey}`,
     },
-    body: JSON.stringify({ 
-      auth_code: code,
+    body: new URLSearchParams({
+      grant_type: 'authorization_code',
+      code: code,
     }),
   })
 
   const data = await response.json()
-  console.log('Supabase response:', JSON.stringify(data))
+  console.log('Status:', response.status, 'Data:', JSON.stringify(data))
 
   if (!response.ok || data.error) {
-    console.error('Error:', data)
-    return NextResponse.redirect(`${origin}/auth/error?reason=${data.error ?? 'unknown'}`)
+    return NextResponse.redirect(`${origin}/auth/error`)
   }
 
   const res = NextResponse.redirect(`${origin}/dashboard`)
-
   const cookieName = `sb-ukqyrudisnvstdlzsqsq-auth-token`
-  
+
   res.cookies.set(cookieName, JSON.stringify({
     access_token: data.access_token,
     refresh_token: data.refresh_token,
