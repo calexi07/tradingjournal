@@ -3,11 +3,12 @@
 import { supabase } from '@/lib/supabase'
 
 export default function HomePage() {
-  async function signInWithDiscord() {
+ async function signInWithDiscord() {
     await supabase.auth.signInWithOAuth({
       provider: 'discord',
       options: {
-        redirectTo: `${window.location.origin}/auth/callback`,
+        redirectTo: 'https://tradingjournal-dzr5.vercel.app/auth/callback',
+        scopes: 'identify email',
       },
     })
   }
