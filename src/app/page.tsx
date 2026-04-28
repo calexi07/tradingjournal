@@ -8,15 +8,26 @@ export default function AuthErrorPage() {
   const router = useRouter()
 
   useEffect(() => {
-    // Verifică dacă există token în URL hash (implicit flow)
     const hash = window.location.hash
+    
     if (hash && hash.includes('access_token')) {
-      // Supabase va procesa automat hash-ul
-      supabase.auth.getSession().then(({ data: { session } }) => {
-        if (session) {
-          router.push('/dashboard')
-        }
-      })
+      // Extrage token-urile din hash manual
+      const params = new URLSearchParams(hash.substring(1))
+      const accessToken = params.get('access_token')
+      const refreshToken = params.get('refresh_token')
+
+      if (accessToken && refreshToken) {
+        supabase.auth.setSession({
+          access_token: accessToken,
+          refresh_token: refreshToken,
+        }).then(({ data, error }) => {
+          if (data.session) {
+            router.push('/dashboard')
+          } else {
+            console.error('Session error:', error)
+          }
+        })
+      }
     }
   }, [router])
 
@@ -33,8 +44,8 @@ export default function AuthErrorPage() {
       fontFamily: 'sans-serif',
     }}>
       <div style={{ fontSize: '48px' }}>⏳</div>
-      <h1 style={{ color: '#00d4aa' }}>Se procesează login-ul...</h1>
-      <p style={{ color: '#8b949e' }}>Te redirectăm automat.</p>
+      <h1 style={{ color: '#00d4aa' }}>Se proceseaza login-ul...</h1>
+      <p style={{ color: '#8b949e' }}>Te redirectam automat.</p>
     </div>
   )
 }
