@@ -1,37 +1,46 @@
 import { NextResponse } from 'next/server'
-import { createServerClient } from '@supabase/ssr'
-import { cookies } from 'next/headers'
 
 export async function GET(request: Request) {
   const { searchParams, origin } = new URL(request.url)
   const code = searchParams.get('code')
 
-  if (code) {
-    const cookieStore = await cookies()
-    
-    const supabase = createServerClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-      {
-        cookies: {
-          getAll() {
-            return cookieStore.getAll()
-          },
-          setAll(cookiesToSet: { name: string; value: string; options?: any }[]) {
-            cookiesToSet.forEach(({ name, value, options }) =>
-              cookieStore.set(name, value, options)
-            )
-          },
-        },
-      }
-    )
-
-    const { error } = await supabase.auth.exchangeCodeForSession(code)
-
-    if (!error) {
-      return NextResponse.redirect(`${origin}/dashboard`)
-    }
+  if (!code) {
+    return NextResponse.redirect(`${origin}/auth/error`)
   }
 
-  return NextResponse.redirect(`${origin}/auth/error`)
+  const supabaseUrl = 'https://ukqyrudisnvstdlzsqsq.supabase.co'
+  const supabaseKey = 'sb_publishable_jw-BS8GquyOL2jIG_kvtYQ_G9kYqMng'
+
+  const response = await fetch(`${supabaseUrl}/auth/v1/token?grant_type=authorization_code`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'apikey': supabaseKey,
+    },
+    body: JSON.stringify({ code }),
+  })
+
+  const data = await response.json()
+
+  if (!response.ok || data.error) {
+    return NextResponse.redirect(`${origin}/auth/error`)
+  }
+
+  const res = NextResponse.redirect(`${origin}/dashboard`)
+
+  res.cookies.set('sb-access-token', data.access_token, {
+    httpOnly: true,
+    secure: true,
+    sameSite: 'lax',
+    path: '/',
+  })
+
+  res.cookies.set('sb-refresh-token', data.refresh_token, {
+    httpOnly: true,
+    secure: true,
+    sameSite: 'lax',
+    path: '/',
+  })
+
+  return res
 }
