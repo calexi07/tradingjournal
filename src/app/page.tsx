@@ -1,34 +1,38 @@
 'use client'
 
-import { supabase } from '@/lib/supabase'
+import { createClient } from '@supabase/supabase-js'
+
+const supabase = createClient(
+  'https://ukqyrudisnvstdlzsqsq.supabase.co',
+  'sb_publishable_jw-BS8GquyOL2jIG_kvtYQ_G9kYqMng',
+  {
+    auth: {
+      flowType: 'implicit',
+    }
+  }
+)
 
 export default function HomePage() {
-async function signInWithDiscord() {
-  await supabase.auth.signInWithOAuth({
-    provider: 'discord',
-    options: {
-      redirectTo: 'https://tradingjournal-dzr5.vercel.app/auth/callback',
-      scopes: 'identify email',
-      skipBrowserRedirect: false,
-    },
-  })
-}
+  async function signInWithDiscord() {
+    await supabase.auth.signInWithOAuth({
+      provider: 'discord',
+      options: {
+        redirectTo: 'https://tradingjournal-dzr5.vercel.app/auth/callback',
+        scopes: 'identify email',
+      },
+    })
+  }
 
   return (
     <main className="min-h-screen flex flex-col items-center justify-center bg-[#080c10]">
       <div className="text-center max-w-md px-6">
-        {/* Logo */}
         <div className="text-5xl mb-6">⬡</div>
-
-        {/* Title */}
         <h1 className="text-4xl font-bold mb-3 tracking-tight">
           Trading<span className="text-[#00d4aa]">Journal</span>
         </h1>
         <p className="text-[#8b949e] mb-10 text-lg">
-          Jurnalul tău profesional pentru prop trading. Analizează, îmbunătățește, crește.
+          Jurnalul tău profesional pentru prop trading.
         </p>
-
-        {/* Discord Login Button */}
         <button
           onClick={signInWithDiscord}
           className="w-full flex items-center justify-center gap-3 bg-[#5865F2] hover:bg-[#4752c4] text-white font-semibold py-4 px-8 rounded-xl transition-all duration-200 text-lg"
@@ -38,8 +42,6 @@ async function signInWithDiscord() {
           </svg>
           Intră cu Discord
         </button>
-
-        {/* Features */}
         <div className="mt-12 grid grid-cols-3 gap-4 text-center">
           <div className="bg-[#0d1117] border border-[#21262d] rounded-xl p-4">
             <div className="text-2xl mb-2">📊</div>
