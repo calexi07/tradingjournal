@@ -61,9 +61,12 @@ export default function DashboardPage() {
           <span className="font-bold text-lg">Trading<span className="text-[#00d4aa]">Journal</span></span>
         </div>
         <div className="flex items-center gap-4">
-          <Link href="/leaderboard" className="text-sm text-[#8b949e] hover:text-white transition-colors">
-            🏆 Leaderboard
-          </Link>
+      <Link href="/leaderboard" className="text-sm text-[#8b949e] hover:text-white transition-colors">
+  🏆 Leaderboard
+</Link>
+<Link href="/news" className="text-sm text-[#8b949e] hover:text-white transition-colors">
+  🔴 News
+</Link>
           <span className="text-[#8b949e] text-sm hidden md:block">
             {user?.user_metadata?.full_name ?? user?.email}
           </span>
