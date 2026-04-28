@@ -1,4 +1,6 @@
 import { NextResponse } from 'next/server'
+import { createServerClient } from '@supabase/ssr'
+import { cookies } from 'next/headers'
 
 export async function GET(request: Request) {
   const { searchParams, origin } = new URL(request.url)
@@ -8,45 +10,35 @@ export async function GET(request: Request) {
     return NextResponse.redirect(`${origin}/auth/error`)
   }
 
-  const supabaseUrl = 'https://ukqyrudisnvstdlzsqsq.supabase.co'
-  const supabaseKey = 'sb_publishable_jw-BS8GquyOL2jIG_kvtYQ_G9kYqMng'
+  const cookieStore = await cookies()
 
-  const response = await fetch(`${supabaseUrl}/auth/v1/token`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/x-www-form-urlencoded',
-      'apikey': supabaseKey,
-    },
-    body: new URLSearchParams({
-      grant_type: 'authorization_code',
-      code: code,
-    }),
-  })
+  const supabase = createServerClient(
+    'https://ukqyrudisnvstdlzsqsq.supabase.co',
+    'sb_publishable_jw-BS8GquyOL2jIG_kvtYQ_G9kYqMng',
+    {
+      cookies: {
+        getAll() {
+          return cookieStore.getAll()
+        },
+        setAll(cookiesToSet: { name: string; value: string; options?: any }[]) {
+          try {
+            cookiesToSet.forEach(({ name, value, options }) =>
+              cookieStore.set(name, value, options)
+            )
+          } catch {
+            // ignore
+          }
+        },
+      },
+    }
+  )
 
-  const data = await response.json()
-  console.log('Status:', response.status, 'Data:', JSON.stringify(data))
+  const { error } = await supabase.auth.exchangeCodeForSession(code)
 
-  if (!response.ok || data.error) {
+  if (error) {
+    console.error('Exchange error:', error.message)
     return NextResponse.redirect(`${origin}/auth/error`)
   }
 
-  const res = NextResponse.redirect(`${origin}/dashboard`)
-  const cookieName = `sb-ukqyrudisnvstdlzsqsq-auth-token`
-
-  res.cookies.set(cookieName, JSON.stringify({
-    access_token: data.access_token,
-    refresh_token: data.refresh_token,
-    expires_at: Math.floor(Date.now() / 1000) + data.expires_in,
-    expires_in: data.expires_in,
-    token_type: 'bearer',
-    user: data.user,
-  }), {
-    httpOnly: true,
-    secure: true,
-    sameSite: 'lax',
-    path: '/',
-    maxAge: 60 * 60 * 24 * 365,
-  })
-
-  return res
+  return NextResponse.redirect(`${origin}/dashboard`)
 }
