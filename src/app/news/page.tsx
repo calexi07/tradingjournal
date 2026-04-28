@@ -1,11 +1,19 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useCallback } from 'react'
 import Link from 'next/link'
-import { format, isToday, isTomorrow, isPast, addMinutes } from 'date-fns'
+import { format, isToday, isTomorrow, isPast } from 'date-fns'
 import { ro } from 'date-fns/locale'
 
-interface NewsEvent {
+interface NewsItem {
+  title: string
+  link: string
+  pubDate: string
+  description: string
+  category: string
+}
+
+interface CalendarEvent {
   title: string
   country: string
   date: string
@@ -16,77 +24,108 @@ interface NewsEvent {
 }
 
 const CURRENCY_FLAGS: Record<string, string> = {
-  USD: '🇺🇸',
-  EUR: '🇪🇺',
-  GBP: '🇬🇧',
-  JPY: '🇯🇵',
-  CAD: '🇨🇦',
-  AUD: '🇦🇺',
-  CHF: '🇨🇭',
-  NZD: '🇳🇿',
-  CNY: '🇨🇳',
+  USD: '🇺🇸', EUR: '🇪🇺', GBP: '🇬🇧', JPY: '🇯🇵',
+  CAD: '🇨🇦', AUD: '🇦🇺', CHF: '🇨🇭', NZD: '🇳🇿', CNY: '🇨🇳',
+}
+
+function timeAgo(dateStr: string): string {
+  const date = new Date(dateStr)
+  const now = new Date()
+  const diffMin = Math.floor((now.getTime() - date.getTime()) / 60000)
+  if (diffMin < 1) return 'acum'
+  if (diffMin < 60) return `${diffMin} min ago`
+  const diffH = Math.floor(diffMin / 60)
+  if (diffH < 24) return `${diffH}h ago`
+  return format(date, 'd MMM', { locale: ro })
 }
 
 function getTimeLabel(dateStr: string): { label: string; color: string } {
   const date = new Date(dateStr)
   const now = new Date()
   const diffMin = (date.getTime() - now.getTime()) / 60000
-
-  if (isPast(date) && Math.abs(diffMin) > 60) {
-    return { label: 'Trecut', color: '#6e7681' }
-  }
-  if (diffMin >= -60 && diffMin <= 0) {
-    return { label: 'ACUM', color: '#f85149' }
-  }
-  if (diffMin > 0 && diffMin <= 60) {
-    return { label: `în ${Math.round(diffMin)} min`, color: '#f0c040' }
-  }
-  if (isToday(date)) {
-    return { label: 'Azi', color: '#00d4aa' }
-  }
-  if (isTomorrow(date)) {
-    return { label: 'Mâine', color: '#58a6ff' }
-  }
+  if (isPast(date) && Math.abs(diffMin) > 60) return { label: 'Trecut', color: '#6e7681' }
+  if (diffMin >= -60 && diffMin <= 0) return { label: 'ACUM', color: '#f85149' }
+  if (diffMin > 0 && diffMin <= 60) return { label: `în ${Math.round(diffMin)} min`, color: '#f0c040' }
+  if (isToday(date)) return { label: 'Azi', color: '#00d4aa' }
+  if (isTomorrow(date)) return { label: 'Mâine', color: '#58a6ff' }
   return { label: format(date, 'EEE d MMM', { locale: ro }), color: '#8b949e' }
 }
 
-export default function NewsPage() {
-  const [events, setEvents] = useState<NewsEvent[]>([])
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
-  const [filter, setFilter] = useState<string>('ALL')
-  const [lastUpdate, setLastUpdate] = useState<Date>(new Date())
+// Detectează impactul știrii din titlu/descriere
+function getNewsImpact(item: NewsItem): 'red' | 'orange' | 'none' {
+  const text = (item.title + ' ' + item.description + ' ' + item.category).toLowerCase()
+  const redKeywords = [
+    'fomc', 'fed', 'federal reserve', 'powell', 'trump', 'nfp', 'non-farm',
+    'cpi', 'inflation', 'gdp', 'rate decision', 'interest rate', 'recession',
+    'war', 'crisis', 'emergency', 'breaking', 'urgent', 'flash', 'shock',
+    'ecb', 'boe', 'bank of england', 'lagarde', 'bailey', 'jobs report',
+    'unemployment', 'default', 'sanctions', 'tariff', 'trade war',
+  ]
+  const orangeKeywords = [
+    'pmi', 'retail sales', 'housing', 'manufacturing', 'services',
+    'consumer confidence', 'trade balance', 'current account',
+    'earnings', 'revenue', 'forecast', 'outlook', 'guidance',
+    'oil', 'gold', 'commodities', 'opec', 'energy',
+  ]
+  for (const kw of redKeywords) {
+    if (text.includes(kw)) return 'red'
+  }
+  for (const kw of orangeKeywords) {
+    if (text.includes(kw)) return 'orange'
+  }
+  return 'none'
+}
 
-  async function fetchNews() {
+export default function NewsPage() {
+  const [latestNews, setLatestNews] = useState<NewsItem[]>([])
+  const [calendarEvents, setCalendarEvents] = useState<CalendarEvent[]>([])
+  const [loading, setLoading] = useState(true)
+  const [lastUpdate, setLastUpdate] = useState<Date>(new Date())
+  const [calFilter, setCalFilter] = useState('ALL')
+  const [countdown, setCountdown] = useState(120)
+
+  const fetchData = useCallback(async () => {
     try {
       const res = await fetch('/api/news')
       const data = await res.json()
-      if (data.error) throw new Error(data.error)
-      setEvents(data.events)
+      setLatestNews(data.latestNews ?? [])
+      setCalendarEvents(data.calendarEvents ?? [])
       setLastUpdate(new Date())
-      setError(null)
-    } catch (err: any) {
-      setError('Nu s-au putut încărca știrile. Încearcă din nou.')
+      setCountdown(120)
+    } catch (e) {
+      console.error('Fetch error:', e)
     } finally {
       setLoading(false)
     }
-  }
-
-  useEffect(() => {
-    fetchNews()
-    // Auto-refresh la fiecare 5 minute
-    const interval = setInterval(fetchNews, 5 * 60 * 1000)
-    return () => clearInterval(interval)
   }, [])
 
-  const currencies = ['ALL', 'USD', 'EUR', 'GBP', 'JPY', 'CAD', 'AUD', 'CHF', 'NZD']
+  useEffect(() => {
+    fetchData()
+    const refreshInterval = setInterval(fetchData, 120 * 1000)
+    return () => clearInterval(refreshInterval)
+  }, [fetchData])
 
-  const filtered = filter === 'ALL'
-    ? events
-    : events.filter(e => e.country === filter)
+  // Countdown timer
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setCountdown(prev => prev <= 1 ? 120 : prev - 1)
+    }, 1000)
+    return () => clearInterval(timer)
+  }, [])
 
-  // Grupează după zi
-  const grouped = filtered.reduce((acc: Record<string, NewsEvent[]>, event) => {
+  // Filtrează știrile — doar roșu și portocaliu
+  const filteredNews = latestNews.filter(item => {
+    const impact = getNewsImpact(item)
+    return impact === 'red' || impact === 'orange'
+  })
+
+  const currencies = ['ALL', 'USD', 'EUR', 'GBP', 'JPY', 'CAD', 'AUD', 'CHF']
+  const filteredCalendar = calFilter === 'ALL'
+    ? calendarEvents
+    : calendarEvents.filter(e => e.country === calFilter)
+
+  // Grupează calendarul după zi
+  const grouped = filteredCalendar.reduce((acc: Record<string, CalendarEvent[]>, event) => {
     const day = format(new Date(event.date), 'yyyy-MM-dd')
     if (!acc[day]) acc[day] = []
     acc[day].push(event)
@@ -101,183 +140,256 @@ export default function NewsPage() {
           <Link href="/dashboard" className="text-[#8b949e] hover:text-white transition-colors">
             ← Dashboard
           </Link>
-          <div className="flex items-center gap-2">
-            <span className="text-xl">🔴</span>
-            <h1 className="font-bold text-lg">High Impact News</h1>
-          </div>
+          <h1 className="font-bold text-lg">📰 Market News</h1>
         </div>
         <div className="flex items-center gap-3">
+          <span className="text-xs text-[#6e7681] font-mono">
+            Refresh în {countdown}s
+          </span>
           <span className="text-xs text-[#6e7681]">
-            Actualizat: {format(lastUpdate, 'HH:mm')}
+            {format(lastUpdate, 'HH:mm:ss')}
           </span>
           <button
-            onClick={fetchNews}
-            className="text-sm text-[#8b949e] hover:text-white transition-colors bg-[#161b22] border border-[#21262d] px-3 py-1.5 rounded-lg"
+            onClick={fetchData}
+            className="text-sm text-[#8b949e] hover:text-white bg-[#161b22] border border-[#21262d] px-3 py-1.5 rounded-lg transition-colors"
           >
             ↻ Refresh
           </button>
         </div>
       </header>
 
-      <main className="max-w-4xl mx-auto px-6 py-8">
-
-        {/* Subtitle */}
-        <p className="text-[#8b949e] text-sm mb-6">
-          Doar evenimentele <span className="text-[#f85149] font-semibold">High Impact</span> — NFP, CPI, FOMC, Fed, GDP și altele. Actualizare automată la 5 minute.
-        </p>
-
-        {/* Currency Filter */}
-        <div className="flex flex-wrap gap-2 mb-8">
-          {currencies.map(currency => (
-            <button
-              key={currency}
-              onClick={() => setFilter(currency)}
-              className="px-3 py-1.5 rounded-lg text-sm font-medium transition-all border"
-              style={{
-                borderColor: filter === currency ? '#f85149' : '#21262d',
-                background: filter === currency ? '#f8514920' : '#0d1117',
-                color: filter === currency ? '#f85149' : '#8b949e',
-              }}
-            >
-              {currency !== 'ALL' ? `${CURRENCY_FLAGS[currency] ?? ''} ` : ''}{currency}
-            </button>
-          ))}
-        </div>
-
-        {/* Loading */}
-        {loading && (
-          <div className="text-center py-20">
+      {loading ? (
+        <div className="flex items-center justify-center py-32">
+          <div className="text-center">
             <div className="text-4xl mb-4 animate-pulse">📰</div>
             <p className="text-[#8b949e]">Se încarcă știrile...</p>
           </div>
-        )}
+        </div>
+      ) : (
+        <main className="max-w-7xl mx-auto px-6 py-6">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
 
-        {/* Error */}
-        {error && (
-          <div className="bg-[#f8514910] border border-[#f8514930] rounded-xl p-4 text-[#f85149] text-sm">
-            {error}
-          </div>
-        )}
-
-        {/* No events */}
-        {!loading && !error && filtered.length === 0 && (
-          <div className="text-center py-20 border border-dashed border-[#21262d] rounded-2xl">
-            <div className="text-4xl mb-4">✅</div>
-            <p className="text-[#8b949e]">Niciun eveniment High Impact această săptămână pentru {filter}.</p>
-          </div>
-        )}
-
-        {/* Events grouped by day */}
-        {!loading && Object.entries(grouped).map(([day, dayEvents]) => {
-          const dayDate = new Date(day)
-          const isCurrentDay = isToday(dayDate)
-
-          return (
-            <div key={day} className="mb-8">
-              {/* Day header */}
-              <div className="flex items-center gap-3 mb-4">
-                <div
-                  className="text-sm font-bold px-3 py-1 rounded-lg"
-                  style={{
-                    background: isCurrentDay ? '#f8514920' : '#161b22',
-                    color: isCurrentDay ? '#f85149' : '#8b949e',
-                    border: `1px solid ${isCurrentDay ? '#f8514940' : '#21262d'}`,
-                  }}
-                >
-                  {isToday(dayDate) ? '🔴 OGGI' : format(dayDate, 'EEEE, d MMMM yyyy', { locale: ro })}
+            {/* ── STÂNGA: Latest News ── */}
+            <div>
+              <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center gap-2">
+                  <h2 className="font-bold text-lg">Latest News</h2>
+                  <span className="text-xs bg-[#161b22] border border-[#21262d] px-2 py-0.5 rounded-full text-[#8b949e]">
+                    Financial Juice
+                  </span>
                 </div>
-                <div className="flex-1 h-px bg-[#21262d]" />
-                <span className="text-xs text-[#6e7681]">{dayEvents.length} evenimente</span>
+                <div className="flex items-center gap-2 text-xs text-[#6e7681]">
+                  <span className="w-2 h-2 rounded-full bg-[#f85149] inline-block"></span> High
+                  <span className="w-2 h-2 rounded-full bg-[#f0a050] inline-block ml-2"></span> Medium
+                </div>
               </div>
 
-              {/* Events */}
-              <div className="space-y-3">
-                {dayEvents.map((event, index) => {
-                  const timeLabel = getTimeLabel(event.date)
-                  const isUpcoming = !isPast(new Date(event.date))
-                  const isNow = timeLabel.label === 'ACUM'
+              {filteredNews.length === 0 ? (
+                <div className="text-center py-16 border border-dashed border-[#21262d] rounded-2xl">
+                  <div className="text-3xl mb-3">📭</div>
+                  <p className="text-[#8b949e] text-sm">Nicio știre importantă momentan.</p>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {filteredNews.map((item, index) => {
+                    const impact = getNewsImpact(item)
+                    const isRed = impact === 'red'
+                    const borderColor = isRed ? '#f8514940' : '#f0a05040'
+                    const dotColor = isRed ? '#f85149' : '#f0a050'
 
-                  return (
-                    <div
-                      key={index}
-                      className="rounded-2xl border px-5 py-4 transition-all"
-                      style={{
-                        background: isNow ? '#f8514908' : '#0d1117',
-                        borderColor: isNow ? '#f8514950' : '#21262d',
-                      }}
-                    >
-                      <div className="flex items-center gap-4 flex-wrap">
+                    return (
+                      
+                        key={index}
+                        href={item.link}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="block rounded-xl border px-4 py-3 transition-all hover:border-[#30363d] group"
+                        style={{
+                          background: '#0d1117',
+                          borderColor: borderColor,
+                        }}
+                      >
+                        <div className="flex items-start gap-3">
+                          {/* Impact dot */}
+                          <div
+                            className="w-2 h-2 rounded-full mt-1.5 flex-shrink-0"
+                            style={{ background: dotColor }}
+                          />
 
-                        {/* Time */}
-                        <div className="min-w-[80px]">
-                          <div className="font-mono text-sm font-bold" style={{ color: timeLabel.color }}>
-                            {timeLabel.label}
-                          </div>
-                          <div className="text-xs text-[#6e7681] font-mono">
-                            {format(new Date(event.date), 'HH:mm')}
-                          </div>
-                        </div>
-
-                        {/* Country */}
-                        <div className="flex items-center gap-2 min-w-[60px]">
-                          <span className="text-lg">
-                            {CURRENCY_FLAGS[event.country] ?? '🌐'}
-                          </span>
-                          <span className="text-sm font-bold text-white">
-                            {event.country}
-                          </span>
-                        </div>
-
-                        {/* Impact badge */}
-                        <span className="text-xs font-bold px-2 py-1 rounded-lg bg-[#f8514920] text-[#f85149] border border-[#f8514930]">
-                          🔴 HIGH
-                        </span>
-
-                        {/* Title */}
-                        <div className="flex-1 min-w-[200px]">
-                          <div className="font-semibold text-white">
-                            {event.title}
-                          </div>
-                        </div>
-
-                        {/* Stats */}
-                        <div className="flex gap-4 text-right">
-                          {event.forecast && (
-                            <div>
-                              <div className="text-xs text-[#6e7681]">Forecast</div>
-                              <div className="text-sm font-mono text-[#58a6ff]">{event.forecast}</div>
+                          <div className="flex-1 min-w-0">
+                            {/* Title */}
+                            <div className="text-sm font-medium text-white group-hover:text-[#00d4aa] transition-colors leading-snug">
+                              {item.title}
                             </div>
-                          )}
-                          {event.previous && (
-                            <div>
-                              <div className="text-xs text-[#6e7681]">Previous</div>
-                              <div className="text-sm font-mono text-[#8b949e]">{event.previous}</div>
+
+                            {/* Meta */}
+                            <div className="flex items-center gap-2 mt-1">
+                              <span className="text-xs text-[#6e7681]">
+                                Financial Juice
+                              </span>
+                              <span className="text-[#30363d]">·</span>
+                              <span className="text-xs font-mono" style={{ color: dotColor }}>
+                                {item.pubDate ? timeAgo(item.pubDate) : ''}
+                              </span>
                             </div>
-                          )}
-                          {event.actual && (
-                            <div>
-                              <div className="text-xs text-[#6e7681]">Actual</div>
+                          </div>
+
+                          {/* Arrow */}
+                          <span className="text-[#6e7681] group-hover:text-[#00d4aa] transition-colors text-sm flex-shrink-0">
+                            →
+                          </span>
+                        </div>
+                      </a>
+                    )
+                  })}
+                </div>
+              )}
+            </div>
+
+            {/* ── DREAPTA: Calendar Economic ── */}
+            <div>
+              <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center gap-2">
+                  <h2 className="font-bold text-lg">🔴 High Impact Calendar</h2>
+                </div>
+              </div>
+
+              {/* Currency filter */}
+              <div className="flex flex-wrap gap-1.5 mb-4">
+                {currencies.map(currency => (
+                  <button
+                    key={currency}
+                    onClick={() => setCalFilter(currency)}
+                    className="px-2.5 py-1 rounded-lg text-xs font-medium transition-all border"
+                    style={{
+                      borderColor: calFilter === currency ? '#f85149' : '#21262d',
+                      background: calFilter === currency ? '#f8514920' : '#0d1117',
+                      color: calFilter === currency ? '#f85149' : '#8b949e',
+                    }}
+                  >
+                    {currency !== 'ALL' ? `${CURRENCY_FLAGS[currency] ?? ''} ` : ''}{currency}
+                  </button>
+                ))}
+              </div>
+
+              {/* Calendar events */}
+              {filteredCalendar.length === 0 ? (
+                <div className="text-center py-16 border border-dashed border-[#21262d] rounded-2xl">
+                  <div className="text-3xl mb-3">✅</div>
+                  <p className="text-[#8b949e] text-sm">Niciun eveniment High Impact.</p>
+                </div>
+              ) : (
+                <div className="space-y-6">
+                  {Object.entries(grouped).map(([day, dayEvents]) => {
+                    const dayDate = new Date(day)
+                    const isCurrentDay = isToday(dayDate)
+
+                    return (
+                      <div key={day}>
+                        {/* Day label */}
+                        <div className="flex items-center gap-2 mb-3">
+                          <div
+                            className="text-xs font-bold px-2.5 py-1 rounded-lg"
+                            style={{
+                              background: isCurrentDay ? '#f8514920' : '#161b22',
+                              color: isCurrentDay ? '#f85149' : '#8b949e',
+                              border: `1px solid ${isCurrentDay ? '#f8514940' : '#21262d'}`,
+                            }}
+                          >
+                            {isToday(dayDate)
+                              ? '🔴 AZI'
+                              : isTomorrow(dayDate)
+                              ? '🟡 MÂINE'
+                              : format(dayDate, 'EEEE, d MMM', { locale: ro }).toUpperCase()}
+                          </div>
+                          <div className="flex-1 h-px bg-[#21262d]" />
+                        </div>
+
+                        <div className="space-y-2">
+                          {dayEvents.map((event, index) => {
+                            const timeLabel = getTimeLabel(event.date)
+                            const isNow = timeLabel.label === 'ACUM'
+                            const isPastEvent = isPast(new Date(event.date))
+
+                            return (
                               <div
-                                className="text-sm font-mono font-bold"
+                                key={index}
+                                className="rounded-xl border px-4 py-3"
                                 style={{
-                                  color: event.actual > event.forecast ? '#00d4aa' : '#f85149'
+                                  background: isNow ? '#f8514908' : '#0d1117',
+                                  borderColor: isNow ? '#f8514950' : '#21262d',
+                                  opacity: isPastEvent && !isNow ? 0.6 : 1,
                                 }}
                               >
-                                {event.actual}
-                              </div>
-                            </div>
-                          )}
-                        </div>
+                                <div className="flex items-center gap-3 flex-wrap">
+                                  {/* Time */}
+                                  <div className="min-w-[65px]">
+                                    <div className="text-xs font-bold font-mono" style={{ color: timeLabel.color }}>
+                                      {timeLabel.label}
+                                    </div>
+                                    <div className="text-xs text-[#6e7681] font-mono">
+                                      {format(new Date(event.date), 'HH:mm')}
+                                    </div>
+                                  </div>
 
+                                  {/* Flag + Currency */}
+                                  <div className="flex items-center gap-1 min-w-[45px]">
+                                    <span>{CURRENCY_FLAGS[event.country] ?? '🌐'}</span>
+                                    <span className="text-xs font-bold">{event.country}</span>
+                                  </div>
+
+                                  {/* Title */}
+                                  <div className="flex-1 min-w-[100px]">
+                                    <div className="text-sm font-medium text-white leading-snug">
+                                      {event.title}
+                                    </div>
+                                  </div>
+
+                                  {/* Stats */}
+                                  <div className="flex gap-3 text-right">
+                                    {event.forecast && (
+                                      <div>
+                                        <div className="text-xs text-[#6e7681]">Fcst</div>
+                                        <div className="text-xs font-mono text-[#58a6ff]">{event.forecast}</div>
+                                      </div>
+                                    )}
+                                    {event.previous && (
+                                      <div>
+                                        <div className="text-xs text-[#6e7681]">Prev</div>
+                                        <div className="text-xs font-mono text-[#8b949e]">{event.previous}</div>
+                                      </div>
+                                    )}
+                                    {event.actual && (
+                                      <div>
+                                        <div className="text-xs text-[#6e7681]">Act</div>
+                                        <div
+                                          className="text-xs font-mono font-bold"
+                                          style={{
+                                            color: parseFloat(event.actual) >= parseFloat(event.forecast)
+                                              ? '#00d4aa'
+                                              : '#f85149'
+                                          }}
+                                        >
+                                          {event.actual}
+                                        </div>
+                                      </div>
+                                    )}
+                                  </div>
+                                </div>
+                              </div>
+                            )
+                          })}
+                        </div>
                       </div>
-                    </div>
-                  )
-                })}
-              </div>
+                    )
+                  })}
+                </div>
+              )}
             </div>
-          )
-        })}
-      </main>
+
+          </div>
+        </main>
+      )}
     </div>
   )
 }
